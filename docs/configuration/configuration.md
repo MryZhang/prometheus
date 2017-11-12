@@ -1134,6 +1134,11 @@ likely in future releases.
 # The URL of the endpoint to query from.
 url: <string>
 
+# An optional list of labels which have to be matched by
+# an expression to query the remote read endpoint.
+required_labels:
+  [ <labelname>: <labelvalue> ... ]
+
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 30s ]
 

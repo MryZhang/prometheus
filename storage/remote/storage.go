@@ -101,6 +101,9 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		var q storage.Queryable
 		q = QueryableClient(c)
 		q = ExternablLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
+		if len(rrConf.RequiredLabels) > 0 {
+			q = RequiredLabelsFilter(q, rrConf.RequiredLabels)
+		}
 		if !rrConf.ReadRecent {
 			q = PreferLocalStorageFilter(q, s.localStartTimeCallback)
 		}

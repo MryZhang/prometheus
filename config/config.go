@@ -1496,6 +1496,10 @@ type RemoteReadConfig struct {
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
 
+	// RequiredLabels is an optional list of labels which have to be matched by
+	// an expression to query the remote read endpoint.
+	RequiredLabels model.LabelSet `yaml:"required_labels,omitempty"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }

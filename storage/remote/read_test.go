@@ -127,11 +127,19 @@ func TestSeriesSetFilter(t *testing.T) {
 	}
 }
 
-type testQuerier struct {
+type mockQuerier struct {
 	ctx        context.Context
 	mint, maxt int64
 
 	storage.Querier
+}
+
+type mockSeriesSet struct {
+	storage.SeriesSet
+}
+
+func (mockQuerier) Select(...*labels.Matcher) storage.SeriesSet {
+	return mockSeriesSet{}
 }
 
 func TestPreferLocalStorageFilter(t *testing.T) {
@@ -147,13 +155,13 @@ func TestPreferLocalStorageFilter(t *testing.T) {
 			localStartTime: int64(100),
 			mint:           int64(0),
 			maxt:           int64(50),
-			querier:        testQuerier{ctx: ctx, mint: 0, maxt: 50},
+			querier:        mockQuerier{ctx: ctx, mint: 0, maxt: 50},
 		},
 		{
 			localStartTime: int64(20),
 			mint:           int64(0),
 			maxt:           int64(50),
-			querier:        testQuerier{ctx: ctx, mint: 0, maxt: 20},
+			querier:        mockQuerier{ctx: ctx, mint: 0, maxt: 20},
 		},
 		{
 			localStartTime: int64(20),
@@ -166,7 +174,7 @@ func TestPreferLocalStorageFilter(t *testing.T) {
 	for i, test := range tests {
 		f := PreferLocalStorageFilter(
 			storage.QuerierFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-				return testQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
+				return mockQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
 			}),
 			func() (int64, error) { return test.localStartTime, nil },
 		)
@@ -178,6 +186,79 @@ func TestPreferLocalStorageFilter(t *testing.T) {
 
 		if test.querier != q {
 			t.Errorf("%d. expected quierer %+v, got %+v", i, test.querier, q)
+		}
+	}
+}
+
+func TestRequiredLabelsFilter(t *testing.T) {
+	ctx := context.Background()
+
+	f := RequiredLabelsFilter(
+		storage.QuerierFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return mockQuerier{ctx: ctx, mint: mint, maxt: maxt}, nil
+		}),
+		model.LabelSet{"job": "custom"},
+	)
+
+	want := &requiredLabelsQuerier{
+		Querier:        mockQuerier{ctx: ctx, mint: 0, maxt: 50},
+		requiredLabels: model.LabelSet{"job": "custom"},
+	}
+	have, err := f.Querier(ctx, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(want, have) {
+		t.Errorf("expected quierer %+v, got %+v", want, have)
+	}
+}
+
+func TestRequiredLabelsQuerierSelect(t *testing.T) {
+	tests := []struct {
+		requiredLabels model.LabelSet
+		matchers       []*labels.Matcher
+		seriesSet      storage.SeriesSet
+	}{
+		{
+			requiredLabels: model.LabelSet{},
+			matchers: []*labels.Matcher{
+				mustNewLabelMatcher(labels.MatchEqual, "job", "special"),
+			},
+			seriesSet: mockSeriesSet{},
+		},
+		{
+			requiredLabels: model.LabelSet{"job": "custom"},
+			matchers: []*labels.Matcher{
+				mustNewLabelMatcher(labels.MatchEqual, "job", "special"),
+			},
+			seriesSet: storage.NoopSeriesSet(),
+		},
+		{
+			requiredLabels: model.LabelSet{"job": "custom", "setting": "something"},
+			matchers: []*labels.Matcher{
+				mustNewLabelMatcher(labels.MatchEqual, "job", "custom"),
+				mustNewLabelMatcher(labels.MatchEqual, "setting", "something"),
+			},
+			seriesSet: mockSeriesSet{},
+		},
+		{
+			requiredLabels: model.LabelSet{"job": "custom", "setting": "something"},
+			matchers: []*labels.Matcher{
+				mustNewLabelMatcher(labels.MatchEqual, "job", "custom"),
+				mustNewLabelMatcher(labels.MatchRegexp, "setting", "something|somethingelse"),
+			},
+			seriesSet: mockSeriesSet{},
+		},
+	}
+
+	for i, test := range tests {
+		q := &requiredLabelsQuerier{
+			Querier:        mockQuerier{},
+			requiredLabels: test.requiredLabels,
+		}
+		if want, have := test.seriesSet, q.Select(test.matchers...); want != have {
+			t.Errorf("%d. expected series set %+v, got %+v", i+1, want, have)
 		}
 	}
 }
